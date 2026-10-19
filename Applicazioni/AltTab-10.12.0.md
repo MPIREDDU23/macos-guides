@@ -1,213 +1,218 @@
-Tutorial: compilare e installare AltTab 10.12.0 su macOS con Xcode
+# Compilare e installare AltTab 10.12.0 su macOS
 
-Questa guida riassume i passaggi che abbiamo seguito per compilare AltTab 10.12.0 su un Mac Apple Silicon, installarlo nella cartella Applicazioni e avviarlo automaticamente all’accesso.
+> Guida pratica per compilare AltTab da sorgente su Apple Silicon, installare una build Release e avviarla automaticamente al login.
+>
+> **Ambiente usato:** Mac Apple Silicon, Xcode 27, Homebrew, CocoaPods. Le modifiche sotto descrivono una soluzione sperimentata su questa configurazione, non una procedura ufficiale del progetto.
 
-La procedura utilizza Xcode 27, CocoaPods e un certificato Apple Development personale.
+## Indice
 
-1. Preparare l’ambiente
+1. [Prerequisiti](#1-prerequisiti)
+2. [Dipendenze](#2-dipendenze)
+3. [Deployment target](#3-deployment-target)
+4. [Warning trattati come errori](#4-warning-trattati-come-errori)
+5. [Firma del codice](#5-firma-del-codice)
+6. [Build Debug e Release](#6-build-debug-e-release)
+7. [Installazione](#7-installazione)
+8. [Versione mostrata come `#VERSION#`](#8-versione-mostrata-come-version)
+9. [Avvio automatico](#9-avvio-automatico)
+10. [Problemi comuni](#10-problemi-comuni)
 
-Occorrono:
+## 1. Prerequisiti
 
-* Mac con processore Apple Silicon
-* Xcode installato
-* Homebrew
-* CocoaPods
-* Codice sorgente di AltTab 10.12.0
+- Un Mac con processore Apple Silicon.
+- Xcode installato e configurato.
+- Homebrew e Git.
+- I sorgenti di [AltTab](https://github.com/lwouis/alt-tab-macos), versione **10.12.0**.
 
-Installa CocoaPods, se non è già presente:
+Se hai scaricato l'archivio ZIP ed estratto la cartella in Download:
 
-brew install cocoapods
-
-Scarica il codice sorgente di AltTab 10.12.0 da  ⁠GitHub, progetto AltTab.
-
-Estrai l’archivio e apri il Terminale nella cartella del progetto:
-
+```bash
 cd ~/Downloads/alt-tab-macos-10.12.0
+```
 
-2. Installare le dipendenze
+> **Nota:** se la cartella si trova altrove, modifica il percorso nel comando.
 
-Esegui:
+## 2. Dipendenze
 
+Installa CocoaPods, se necessario:
+
+```bash
+brew install cocoapods
+```
+
+Dalla radice dei sorgenti:
+
+```bash
 pod install
-
-Attendi che CocoaPods completi l’installazione.
-
-Apri quindi il workspace:
-
 open alt-tab-macos.xcworkspace
+```
 
-Importante: apri sempre il file .xcworkspace, non il .xcodeproj, perché il progetto utilizza CocoaPods.
+Apri il **workspace `.xcworkspace`** e non soltanto il progetto `.xcodeproj`, perché AltTab utilizza CocoaPods.
 
-3. Correggere il deployment target
+## 3. Deployment target
 
-Durante i nostri tentativi, Xcode 27 segnalava errori perché alcune configurazioni richiedevano macOS 10.12.
+In questa configurazione alcune impostazioni puntavano a macOS 10.12, causando problemi con la toolchain recente. Abbiamo portato il deployment target a **macOS 12.0**.
 
-Abbiamo risolto impostando macOS 12.0 come deployment target.
+Esegui i seguenti comandi **dalla radice dei sorgenti**:
 
-Dalla cartella del progetto esegui:
-
+```bash
 sed -i '' \
   's/MACOSX_DEPLOYMENT_TARGET = 10\.12;/MACOSX_DEPLOYMENT_TARGET = 12.0;/g' \
   alt-tab-macos.xcodeproj/project.pbxproj
-
-Ripeti per CocoaPods:
 
 sed -i '' \
   's/MACOSX_DEPLOYMENT_TARGET = 10\.12;/MACOSX_DEPLOYMENT_TARGET = 12.0;/g' \
   Pods/Pods.xcodeproj/project.pbxproj
 
-Modifica anche il file di configurazione principale:
-
 sed -i '' \
-  's/MACOSX_DEPLOYMENT_TARGET = 10\.12/MACOSX_DEPLOYMENT_TARGET = 12.0/' \
+  's/MACOSX_DEPLOYMENT_TARGET = 10\.12/MACOSX_DEPLOYMENT_TARGET = 12.0/g' \
   config/base.xcconfig
+```
 
-Verifica:
+Controlla il valore effettivo:
 
+```bash
 xcodebuild \
   -workspace alt-tab-macos.xcworkspace \
   -scheme Debug \
   -configuration Debug \
   -showBuildSettings 2>/dev/null \
   | grep 'MACOSX_DEPLOYMENT_TARGET ='
+```
 
-Il risultato atteso è:
+Il valore atteso per il target dell'app è `12.0`. L'output può includere più righe relative a target differenti.
 
-MACOSX_DEPLOYMENT_TARGET = 12.0
+> **Attenzione:** `pod install` può rigenerare alcune impostazioni del progetto Pods. Se lo riesegui, ricontrolla il deployment target.
 
-4. Evitare che gli avvisi blocchino la compilazione
+## 4. Warning trattati come errori
 
-Con Xcode 27 abbiamo incontrato errori relativi ad API Swift deprecate, tra cui ultraDark.
+Con Xcode 27, un avviso relativo a un'API deprecata, tra cui `ultraDark`, bloccava la compilazione. Per impedire che i warning siano considerati errori, aggiungi queste impostazioni **una sola volta** a `config/base.xcconfig`:
 
-Per evitare che i warning vengano trattati come errori, aggiungi queste righe a config/base.xcconfig:
-
-cat >> config/base.xcconfig <<'EOF'
+```xcconfig
 SWIFT_TREAT_WARNINGS_AS_ERRORS = NO
 GCC_TREAT_WARNINGS_AS_ERRORS = NO
-EOF
+```
 
-Questa modifica non elimina gli avvisi, ma permette alla compilazione di proseguire quando si tratta effettivamente di warning.
+Puoi aprire il file con:
 
-5. Configurare la firma in Xcode
+```bash
+open -a TextEdit config/base.xcconfig
+```
 
-Apri il workspace:
+Questa modifica non risolve eventuali errori reali di compilazione e non elimina i warning.
 
-open alt-tab-macos.xcworkspace
+## 5. Firma del codice
 
 In Xcode:
 
-1. Seleziona il progetto alt-tab-macos.
-2. Seleziona il target alt-tab-macos.
-3. Apri Signing & Capabilities.
-4. Attiva Automatically manage signing.
-5. Nel campo Team, seleziona il tuo Personal Team.
-6. Controlla le configurazioni Debug e Release.
+1. Seleziona il progetto **alt-tab-macos** nel navigatore.
+2. Seleziona il target **alt-tab-macos**.
+3. Apri **Signing & Capabilities**.
+4. Abilita **Automatically manage signing**.
+5. Imposta **Team** sul tuo account, ad esempio **Personal Team**.
+6. Controlla sia **Debug** sia **Release**.
 
-Nel nostro caso è stato necessario configurare il certificato di firma affinché la compilazione Release andasse a buon fine.
+Se Xcode richiede l'autorizzazione per il certificato **Apple Development** nel Portachiavi, concedila.
 
-Se Xcode richiede l’accesso al certificato Apple Development nel portachiavi, autorizzalo.
+> **Importante:** non correggere problemi di firma applicando `codesign --sign -` all'app installata. La firma ad hoc ha causato blocchi all'avvio nei nostri tentativi. Usa la firma gestita da Xcode e verifica che l'app risultante si apra correttamente.
 
-6. Compilare AltTab
+## 6. Build Debug e Release
 
-In Xcode, seleziona lo schema Debug per verificare che il progetto funzioni.
+### Verifica Debug
 
-Premi:
+1. Seleziona lo schema **Debug** in Xcode.
+2. Premi **⌘B** per compilare.
+3. Se la compilazione riesce, prova **Run** per verificare il funzionamento.
 
-⌘ + B
+### Compilazione Release
 
-Se compare Build Succeeded, prova ad avviare l’applicazione con il pulsante Run.
+1. Apri **Product → Scheme → Edit Scheme**.
+2. Seleziona **Run**.
+3. Imposta **Build Configuration** su **Release**.
+4. Chiudi la finestra e premi **⌘B**.
+5. Verifica la comparsa di **Build Succeeded**.
 
-Successivamente passa alla configurazione Release:
+Nel caso documentato, la compilazione da interfaccia Xcode è riuscita, mentre alcuni tentativi iniziali con `xcodebuild` da Terminale fallivano senza diagnostica chiara.
 
-1. Apri Product → Scheme → Edit Scheme.
-2. Seleziona Run.
-3. Imposta Build Configuration su Release.
-4. Chiudi la finestra.
-5. Premi nuovamente ⌘ + B.
+## 7. Installazione
 
-Attendi il messaggio:
+Dopo aver compilato la Release:
 
-Build Succeeded
+1. Apri **Project Navigator** con **⌘1**.
+2. Espandi **Products**.
+3. Fai clic destro su **AltTab.app → Show in Finder**.
+4. Verifica che l'app provenga dalla build **Release**.
+5. Chiudi eventuali istanze di AltTab e conserva un backup della versione già installata.
+6. Copia **AltTab.app** in `/Applications`.
 
-Nota: nei nostri tentativi iniziali, le compilazioni da Terminale fallivano senza un errore esplicito, mentre la compilazione tramite interfaccia Xcode è riuscita. Per questo consiglio di utilizzare Xcode.
+Avvia la copia installata:
 
-7. Installare AltTab in Applicazioni
-
-Una volta completata la compilazione Release:
-
-1. In Xcode apri il Project Navigator con ⌘ + 1.
-2. Espandi Products.
-3. Clicca con il tasto destro su AltTab.app.
-4. Seleziona Show in Finder.
-5. Verifica di aver individuato la versione Release.
-
-Se esiste già una versione di AltTab, chiudila e conservala come backup.
-
-Copia quindi AltTab.app nella cartella:
-
-/Applications/
-
-Avvia l’applicazione:
-
+```bash
 open /Applications/AltTab.app
+```
 
-Se funziona, AltTab può essere utilizzata indipendentemente da Xcode.
+Per verificare la firma senza modificarla:
 
-8. Correggere il numero di versione
+```bash
+codesign --verify --deep --strict --verbose=2 /Applications/AltTab.app
+```
 
-Nel nostro caso, il comando:
+Se l'app non si apre, controlla gli errori prima di intervenire sulla firma o sulle impostazioni di sicurezza.
 
+## 8. Versione mostrata come `#VERSION#`
+
+Nel caso documentato, questo comando:
+
+```bash
 defaults read /Applications/AltTab.app/Contents/Info CFBundleShortVersionString
+```
 
 restituiva:
 
+```text
 #VERSION#
+```
 
-Questo accade perché il progetto contiene un segnaposto per la versione, normalmente sostituito durante la preparazione della distribuzione.
+Il progetto contiene quindi un segnaposto non sostituito durante questa compilazione. Se l'app funziona, il problema può essere soltanto di visualizzazione della versione.
 
-La soluzione migliore è correggere il valore nel progetto prima della compilazione, evitando di modificare un’applicazione già firmata.
+Per correggerlo, individua il file `Info.plist` effettivamente usato dal target o l'impostazione di build che genera `CFBundleShortVersionString`, imposta il valore `10.12.0` **nei sorgenti** e ricompila la Release.
 
-Apri il file Info.plist utilizzato dal target e imposta:
+**Non modificare direttamente** `Contents/Info.plist` nell'app già installata: invalideresti la firma esistente.
 
-CFBundleShortVersionString = 10.12.0
+## 9. Avvio automatico
 
-Poi ricompila la Release.
+Su macOS:
 
-Modificare direttamente Info.plist dentro /Applications/AltTab.app invalida invece la firma digitale e può impedire l’avvio dell’applicazione.
+1. Apri **Impostazioni di Sistema**.
+2. Vai su **Generali → Elementi login ed estensioni**.
+3. Nella sezione **Apri al login**, premi **+**.
+4. Seleziona `/Applications/AltTab.app`.
+5. Conferma con **Aggiungi**.
 
-9. Attivare l’avvio automatico
+In alternativa, verifica se nelle preferenze di AltTab è disponibile l'opzione **Launch at login**.
 
-Per avviare AltTab automaticamente quando accedi al Mac:
+L'app verrà avviata quando accedi al tuo account, senza bisogno di Xcode.
 
-1. Apri Impostazioni di Sistema.
-2. Vai su Generali → Elementi login ed estensioni.
-3. Nella sezione Apri al login, premi +.
-4. Seleziona /Applications/AltTab.app.
-5. Premi Aggiungi.
+## 10. Problemi comuni
 
-In alternativa, puoi attivare Launch at login direttamente nelle preferenze di AltTab.
+| Problema | Soluzione |
+| --- | --- |
+| `pod` non trovato | Installa CocoaPods con `brew install cocoapods`. |
+| Dipendenze mancanti | Esegui `pod install` e apri il `.xcworkspace`. |
+| Deployment target macOS 10.12 non supportato | Aggiorna i file di progetto e `config/base.xcconfig` a macOS 12.0. |
+| Warning Swift trattati come errori | Imposta `SWIFT_TREAT_WARNINGS_AS_ERRORS = NO`. |
+| `Signing requires a development team` | Seleziona il Team in **Signing & Capabilities**. |
+| Build da Terminale fallita senza errori espliciti | Prova la compilazione da Xcode e consulta il Report Navigator. |
+| App segnalata come danneggiata | Verifica la firma; non applicare firme ad hoc o disattivare Gatekeeper. |
+| Versione `#VERSION#` | Correggi la configurazione nei sorgenti e ricompila. |
+| App chiusa quando interrompi Xcode | Avvia la copia Release installata in `/Applications`. |
+| App non avviata al login | Aggiungila agli elementi login di macOS. |
 
-L’applicazione verrà avviata automaticamente all’accesso al tuo account, senza dover aprire Xcode.
+---
 
-⸻
+## Riferimenti
 
-Problemi incontrati e relative soluzioni
+- [AltTab, repository ufficiale](https://github.com/lwouis/alt-tab-macos)
+- [CocoaPods](https://cocoapods.org/)
 
-Problema	Soluzione
-CocoaPods non installato	brew install cocoapods
-Dipendenze mancanti	pod install
-Errori relativi a macOS 10.12	Impostare deployment target a 12.0
-API Swift deprecate trattate come errori	Disattivare SWIFT_TREAT_WARNINGS_AS_ERRORS
-Signing requires a development team	Selezionare il Personal Team in Xcode
-Richieste ripetute del portachiavi	Autorizzare il certificato Apple Development
-Build Failed senza errori espliciti da Terminale	Provare la compilazione tramite Xcode
-App danneggiata o bloccata da macOS	Verificare la firma ed evitare build ad hoc incomplete
-Versione visualizzata come #VERSION#	Correggere il valore nel progetto e ricompilare
-AltTab si chiude quando interrompi Xcode	Installare e avviare la Release da /Applications
-AltTab non parte all’accensione	Aggiungerla agli elementi di login
-
-Risultato finale
-
-Con questa procedura ottieni una copia di AltTab 10.12.0 compilata per Apple Silicon, installabile in /Applications e configurabile per l’avvio automatico.
-
-La compilazione Release è riuscita nel nostro caso. Rimane importante verificare che l’app installata sia firmata correttamente e che funzioni anche dopo un riavvio, senza Xcode aperto.
+*Guida basata su una compilazione locale di AltTab 10.12.0. Le opzioni e le schermate di Xcode possono variare tra versioni.*
